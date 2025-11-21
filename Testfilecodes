@@ -1,0 +1,416 @@
+import google.generativeai as genai
+import tkinter as tk
+from tkinter import ttk, scrolledtext, messagebox, filedialog
+import threading
+import json
+import os
+import re
+from datetime import datetime
+from dotenv import load_dotenv
+
+load_dotenv()
+
+class InquireChatBot:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Inqui.re - AI Assistant")
+        self.root.geometry("700x800")
+        self.root.configure(bg='#1E1E1E')
+        
+        # Style configuration
+        self.setup_styles()
+        
+        # Initialize AI
+        self.setup_ai()
+        
+        # Setup GUI
+        self.setup_gui()
+        
+        # Start with welcome message
+        self.add_bot_message("Hello! I'm **Inqui.re**, your AI assistant. How can I help you today? 🌟")
+    
+    def setup_styles(self):
+        """Configure modern styles"""
+        self.style = ttk.Style()
+        self.style.theme_use('clam')
+        
+        # Configure colors
+        self.colors = {
+            'bg': '#1E1E1E',
+            'fg': '#FFFFFF',
+            'accent': '#007ACC',
+            'user_msg': '#4EC9B0',
+            'bot_msg': '#CE9178',
+            'system_msg': '#569CD6',
+            'heading': '#FFD700',
+            'bold': '#FFFFFF'
+        }
+    
+    def setup_ai(self):
+        """Initialize the Google AI API"""
+        try:
+            self.api_key = os.getenv('GOOGLE_API_KEY')
+            if not self.api_key:
+                messagebox.showerror("Error", "Please set GOOGLE_API_KEY in your .env file")
+                return
+            
+            genai.configure(api_key=self.api_key)
+            
+            # Try different models
+            model_names = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro']
+            self.model = None
+            
+            for name in model_names:
+                try:
+                    self.model = genai.GenerativeModel(name)
+                    print(f"✅ Using model: {name}")
+                    break
+                except:
+                    continue
+            
+            if not self.model:
+                messagebox.showerror("Error", "No working model found")
+                return
+            
+            self.chat = self.model.start_chat(history=[])
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to initialize AI: {e}")
+    
+    def clean_formatting(self, text):
+        """
+        Clean markdown formatting and convert to readable text
+        """
+        # Remove markdown symbols and clean up formatting
+        cleaned_text = text
+        
+        # Remove **bold** but make it visually distinct
+        cleaned_text = re.sub(r'\*\*(.*?)\*\*', r'\1', cleaned_text)
+        
+        # Remove *italic*
+        cleaned_text = re.sub(r'\*(.*?)\*', r'\1', cleaned_text)
+        
+        # Remove __underline__
+        cleaned_text = re.sub(r'__(.*?)__', r'\1', cleaned_text)
+        
+        # Remove ~~strikethrough~~
+        cleaned_text = re.sub(r'~~(.*?)~~', r'\1', cleaned_text)
+        
+        # Remove `code`
+        cleaned_text = re.sub(r'`(.*?)`', r'\1', cleaned_text)
+        
+        # Remove headers (# Header)
+        cleaned_text = re.sub(r'^#+\s+', '', cleaned_text, flags=re.MULTILINE)
+        
+        # Remove blockquotes (> quote)
+        cleaned_text = re.sub(r'^>\s+', '', cleaned_text, flags=re.MULTILINE)
+        
+        # Clean up multiple newlines
+        cleaned_text = re.sub(r'\n\s*\n', '\n\n', cleaned_text)
+        
+        return cleaned_text.strip()
+    
+    def format_response(self, text):
+        """
+        Format the response with proper styling for tkinter
+        """
+        # First clean the markdown
+        cleaned_text = self.clean_formatting(text)
+        
+        # You can add additional formatting logic here if needed
+        return cleaned_text
+    
+    def setup_gui(self):
+        """Setup the enhanced graphical user interface"""
+        # Main container
+        main_container = tk.Frame(self.root, bg=self.colors['bg'])
+        main_container.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
+        
+        # Header
+        header_frame = tk.Frame(main_container, bg=self.colors['bg'])
+        header_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        title_label = tk.Label(
+            header_frame,
+            text="🔍 Inqui.re - AI Assistant",
+            font=('Arial', 18, 'bold'),
+            fg=self.colors['accent'],
+            bg=self.colors['bg']
+        )
+        title_label.pack(side=tk.LEFT)
+        
+        # Status indicator
+        self.status_var = tk.StringVar(value="🟢 Online")
+        status_label = tk.Label(
+            header_frame,
+            textvariable=self.status_var,
+            font=('Arial', 10),
+            fg='#00FF00',
+            bg=self.colors['bg']
+        )
+        status_label.pack(side=tk.RIGHT)
+        
+        # Chat display with modern styling
+        chat_frame = tk.Frame(main_container, bg=self.colors['bg'])
+        chat_frame.pack(fill=tk.BOTH, expand=True, pady=10)
+        
+        self.chat_display = scrolledtext.ScrolledText(
+            chat_frame,
+            wrap=tk.WORD,
+            width=70,
+            height=25,
+            font=('Segoe UI', 10),
+            bg='#252526',
+            fg=self.colors['fg'],
+            state=tk.DISABLED,
+            relief=tk.FLAT,
+            borderwidth=0,
+            padx=15,
+            pady=15
+        )
+        self.chat_display.pack(fill=tk.BOTH, expand=True)
+        
+        # Configure message styles with enhanced formatting
+        self.chat_display.tag_config('user', 
+                                   foreground=self.colors['user_msg'], 
+                                   justify='right', 
+                                   font=('Segoe UI', 10, 'bold'))
+        
+        self.chat_display.tag_config('bot', 
+                                   foreground=self.colors['bot_msg'], 
+                                   justify='left', 
+                                   font=('Segoe UI', 10))
+        
+        self.chat_display.tag_config('system', 
+                                   foreground=self.colors['system_msg'], 
+                                   justify='center', 
+                                   font=('Segoe UI', 9, 'italic'))
+        
+        self.chat_display.tag_config('bold', 
+                                   font=('Segoe UI', 10, 'bold'),
+                                   foreground=self.colors['bold'])
+        
+        self.chat_display.tag_config('heading', 
+                                   font=('Segoe UI', 11, 'bold'),
+                                   foreground=self.colors['heading'])
+        
+        # Input area
+        input_frame = tk.Frame(main_container, bg=self.colors['bg'])
+        input_frame.pack(fill=tk.X, pady=10)
+        
+        self.message_entry = tk.Entry(
+            input_frame,
+            font=('Segoe UI', 12),
+            bg='#3C3C3C',
+            fg=self.colors['fg'],
+            insertbackground=self.colors['fg'],
+            relief=tk.FLAT,
+            borderwidth=8,
+            placeholder="Ask Inqui.re anything..."
+        )
+        self.message_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 10))
+        self.message_entry.bind('<Return>', self.send_message)
+        
+        # Add placeholder text functionality
+        def set_placeholder(event=None):
+            if not self.message_entry.get():
+                self.message_entry.insert(0, "Ask Inqui.re anything...")
+                self.message_entry.config(fg='gray')
+        
+        def remove_placeholder(event=None):
+            if self.message_entry.get() == "Ask Inqui.re anything...":
+                self.message_entry.delete(0, tk.END)
+                self.message_entry.config(fg=self.colors['fg'])
+        
+        self.message_entry.bind('<FocusIn>', remove_placeholder)
+        self.message_entry.bind('<FocusOut>', set_placeholder)
+        set_placeholder()  # Set initial placeholder
+        
+        self.send_button = tk.Button(
+            input_frame,
+            text="🔍 Ask",
+            command=self.send_message,
+            font=('Segoe UI', 10, 'bold'),
+            bg=self.colors['accent'],
+            fg='white',
+            activebackground='#005A9E',
+            activeforeground='white',
+            relief=tk.FLAT,
+            borderwidth=0,
+            padx=20
+        )
+        self.send_button.pack(side=tk.RIGHT)
+        
+        # Control buttons
+        controls_frame = tk.Frame(main_container, bg=self.colors['bg'])
+        controls_frame.pack(fill=tk.X)
+        
+        buttons = [
+            ("🆕 New Chat", self.new_chat, '#28A745'),
+            ("🗑️ Clear", self.clear_chat, '#DC3545'),
+            ("💾 Save Chat", self.save_chat, '#FFC107'),
+            ("📤 Export", self.export_chat, '#17A2B8')
+        ]
+        
+        for text, command, color in buttons:
+            btn = tk.Button(
+                controls_frame,
+                text=text,
+                command=command,
+                bg=color,
+                fg='white',
+                font=('Segoe UI', 9),
+                relief=tk.FLAT,
+                padx=15,
+                pady=5
+            )
+            btn.pack(side=tk.LEFT, padx=5)
+        
+        # Focus on input
+        self.message_entry.focus()
+    
+    def add_message(self, message, sender='user'):
+        """Add a styled message to the chat"""
+        self.chat_display.config(state=tk.NORMAL)
+        
+        timestamp = datetime.now().strftime("%H:%M")
+        
+        if sender == 'user':
+            self.chat_display.insert(tk.END, f"\n[{timestamp}] You:\n", 'user')
+            self.chat_display.insert(tk.END, f"{message}\n\n")
+        elif sender == 'bot':
+            self.chat_display.insert(tk.END, f"\n[{timestamp}] Inqui.re:\n", 'bot')
+            
+            # Format the message to remove markdown
+            formatted_message = self.format_response(message)
+            self.chat_display.insert(tk.END, f"{formatted_message}\n\n")
+            
+        elif sender == 'system':
+            self.chat_display.insert(tk.END, f"\n{message}\n", 'system')
+        
+        self.chat_display.config(state=tk.DISABLED)
+        self.chat_display.see(tk.END)
+    
+    def add_bot_message(self, message):
+        self.add_message(message, 'bot')
+    
+    def add_user_message(self, message):
+        self.add_message(message, 'user')
+    
+    def send_message(self, event=None):
+        message = self.message_entry.get().strip()
+        
+        # Ignore if it's placeholder text or empty
+        if not message or message == "Ask Inqui.re anything...":
+            return
+        
+        self.message_entry.delete(0, tk.END)
+        self.add_user_message(message)
+        
+        # Update UI for processing
+        self.send_button.config(state=tk.DISABLED, text="⏳ Processing...")
+        self.message_entry.config(state=tk.DISABLED)
+        self.status_var.set("🔍 Inqui.re is thinking...")
+        
+        # Show typing
+        self.show_typing_indicator()
+        
+        # Get response in thread
+        threading.Thread(target=self.get_ai_response, args=(message,), daemon=True).start()
+    
+    def show_typing_indicator(self):
+        self.chat_display.config(state=tk.NORMAL)
+        self.chat_display.insert(tk.END, "Inqui.re is typing...\n", 'system')
+        self.chat_display.config(state=tk.DISABLED)
+        self.chat_display.see(tk.END)
+    
+    def remove_typing_indicator(self):
+        self.chat_display.config(state=tk.NORMAL)
+        self.chat_display.delete('end-2l', 'end-1l')
+        self.chat_display.config(state=tk.DISABLED)
+    
+    def get_ai_response(self, message):
+        try:
+            # You can customize the prompt to get cleaner responses
+            prompt = f"""
+            Please provide a clear, well-structured response without using markdown formatting symbols like **, *, _, ~~, `, or #.
+            Use clear section breaks and natural emphasis instead of symbols.
+            
+            User question: {message}
+            """
+            
+            response = self.chat.send_message(prompt)
+            self.root.after(0, self.display_ai_response, response.text)
+        except Exception as e:
+            self.root.after(0, self.display_ai_response, f"Error: {str(e)}")
+    
+    def display_ai_response(self, response):
+        self.remove_typing_indicator()
+        self.add_bot_message(response)
+        
+        # Reset UI
+        self.send_button.config(state=tk.NORMAL, text="🔍 Ask")
+        self.message_entry.config(state=tk.NORMAL)
+        self.message_entry.focus()
+        self.status_var.set("🟢 Online")
+        
+        # Reset placeholder
+        if not self.message_entry.get():
+            self.message_entry.insert(0, "Ask Inqui.re anything...")
+            self.message_entry.config(fg='gray')
+    
+    def clear_chat(self):
+        self.chat_display.config(state=tk.NORMAL)
+        self.chat_display.delete(1.0, tk.END)
+        self.chat_display.config(state=tk.DISABLED)
+        self.add_bot_message("Chat cleared! Ready for new conversation. 🎯")
+    
+    def new_chat(self):
+        self.chat = self.model.start_chat(history=[])
+        self.clear_chat()
+        self.add_bot_message("Hello! I'm **Inqui.re**, your AI assistant. What would you like to explore today? 🌟")
+    
+    def save_chat(self):
+        try:
+            filename = filedialog.asksaveasfilename(
+                defaultextension=".txt",
+                filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
+                title="Save Inqui.re Conversation"
+            )
+            if filename:
+                with open(filename, 'w', encoding='utf-8') as f:
+                    f.write(self.chat_display.get(1.0, tk.END))
+                messagebox.showinfo("Success", "Conversation saved successfully!")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to save conversation: {e}")
+    
+    def export_chat(self):
+        try:
+            filename = filedialog.asksaveasfilename(
+                defaultextension=".json",
+                filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
+                title="Export Inqui.re Conversation"
+            )
+            if filename:
+                chat_data = {
+                    'timestamp': datetime.now().isoformat(),
+                    'assistant': 'Inqui.re',
+                    'model': str(self.model.model_name),
+                    'conversation': self.chat_display.get(1.0, tk.END)
+                }
+                
+                with open(filename, 'w', encoding='utf-8') as f:
+                    json.dump(chat_data, f, indent=2, ensure_ascii=False)
+                
+                messagebox.showinfo("Success", "Conversation exported successfully!")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to export conversation: {e}")
+
+
+def main():
+    root = tk.Tk()
+    app = InquireChatBot(root)
+    root.mainloop()
+
+if __name__ == "__main__":
+    main()
