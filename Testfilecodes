@@ -42,8 +42,9 @@ class InquireChatBot:
             'user_msg': '#4EC9B0',
             'bot_msg': '#CE9178',
             'system_msg': '#569CD6',
-            'heading': '#FFD700',
-            'bold': '#FFFFFF'
+            'bold': '#FFD700',
+            'italic': '#E6E6FA',
+            'heading': '#87CEEB'
         }
     
     def setup_ai(self):
@@ -77,48 +78,72 @@ class InquireChatBot:
         except Exception as e:
             messagebox.showerror("Error", f"Failed to initialize AI: {e}")
     
-    def clean_formatting(self, text):
+    def render_markdown(self, text_widget, text):
         """
-        Clean markdown formatting and convert to readable text
+        Render markdown formatting in tkinter text widget
         """
-        # Remove markdown symbols and clean up formatting
-        cleaned_text = text
+        # Split text into lines for processing
+        lines = text.split('\n')
         
-        # Remove **bold** but make it visually distinct
-        cleaned_text = re.sub(r'\*\*(.*?)\*\*', r'\1', cleaned_text)
-        
-        # Remove *italic*
-        cleaned_text = re.sub(r'\*(.*?)\*', r'\1', cleaned_text)
-        
-        # Remove __underline__
-        cleaned_text = re.sub(r'__(.*?)__', r'\1', cleaned_text)
-        
-        # Remove ~~strikethrough~~
-        cleaned_text = re.sub(r'~~(.*?)~~', r'\1', cleaned_text)
-        
-        # Remove `code`
-        cleaned_text = re.sub(r'`(.*?)`', r'\1', cleaned_text)
-        
-        # Remove headers (# Header)
-        cleaned_text = re.sub(r'^#+\s+', '', cleaned_text, flags=re.MULTILINE)
-        
-        # Remove blockquotes (> quote)
-        cleaned_text = re.sub(r'^>\s+', '', cleaned_text, flags=re.MULTILINE)
-        
-        # Clean up multiple newlines
-        cleaned_text = re.sub(r'\n\s*\n', '\n\n', cleaned_text)
-        
-        return cleaned_text.strip()
-    
-    def format_response(self, text):
-        """
-        Format the response with proper styling for tkinter
-        """
-        # First clean the markdown
-        cleaned_text = self.clean_formatting(text)
-        
-        # You can add additional formatting logic here if needed
-        return cleaned_text
+        for line in lines:
+            if not line.strip():
+                text_widget.insert(tk.END, '\n')
+                continue
+            
+            # Check for headings
+            heading_match = re.match(r'^(#+)\s+(.*)$', line)
+            if heading_match:
+                level = len(heading_match.group(1))
+                heading_text = heading_match.group(2)
+                font_size = {1: 14, 2: 13, 3: 12}.get(level, 11)
+                
+                text_widget.insert(tk.END, heading_text + '\n', f'heading_{level}')
+                continue
+            
+            # Process inline formatting
+            pos = 0
+            while pos < len(line):
+                # Look for bold **text**
+                bold_match = re.search(r'\*\*(.*?)\*\*', line[pos:])
+                # Look for italic *text*
+                italic_match = re.search(r'\*(.*?)\*', line[pos:])
+                # Look for code `text`
+                code_match = re.search(r'`(.*?)`', line[pos:])
+                
+                # Find the earliest match
+                matches = []
+                if bold_match:
+                    matches.append(('bold', bold_match.start() + pos, bold_match))
+                if italic_match:
+                    matches.append(('italic', italic_match.start() + pos, italic_match))
+                if code_match:
+                    matches.append(('code', code_match.start() + pos, code_match))
+                
+                if not matches:
+                    # No more formatting, add the rest of the text
+                    text_widget.insert(tk.END, line[pos:])
+                    break
+                
+                # Sort matches by position
+                matches.sort(key=lambda x: x[1])
+                format_type, match_pos, match = matches[0]
+                
+                # Add text before the formatting
+                if match_pos > pos:
+                    text_widget.insert(tk.END, line[pos:match_pos])
+                
+                # Add formatted text
+                if format_type == 'bold':
+                    text_widget.insert(tk.END, match.group(1), 'bold')
+                elif format_type == 'italic':
+                    text_widget.insert(tk.END, match.group(1), 'italic')
+                elif format_type == 'code':
+                    text_widget.insert(tk.END, match.group(1), 'code')
+                
+                # Move position after the formatted text
+                pos = match_pos + len(match.group(0))
+            
+            text_widget.insert(tk.END, '\n')
     
     def setup_gui(self):
         """Setup the enhanced graphical user interface"""
@@ -170,7 +195,7 @@ class InquireChatBot:
         )
         self.chat_display.pack(fill=tk.BOTH, expand=True)
         
-        # Configure message styles with enhanced formatting
+        # Configure message styles with markdown support
         self.chat_display.tag_config('user', 
                                    foreground=self.colors['user_msg'], 
                                    justify='right', 
@@ -186,12 +211,31 @@ class InquireChatBot:
                                    justify='center', 
                                    font=('Segoe UI', 9, 'italic'))
         
+        # Markdown formatting tags
         self.chat_display.tag_config('bold', 
                                    font=('Segoe UI', 10, 'bold'),
                                    foreground=self.colors['bold'])
         
-        self.chat_display.tag_config('heading', 
-                                   font=('Segoe UI', 11, 'bold'),
+        self.chat_display.tag_config('italic', 
+                                   font=('Segoe UI', 10, 'italic'),
+                                   foreground=self.colors['italic'])
+        
+        self.chat_display.tag_config('code', 
+                                   font=('Courier New', 10),
+                                   background='#2D2D2D',
+                                   foreground='#D4D4D4')
+        
+        # Heading tags
+        self.chat_display.tag_config('heading_1', 
+                                   font=('Segoe UI', 14, 'bold'),
+                                   foreground=self.colors['heading'])
+        
+        self.chat_display.tag_config('heading_2', 
+                                   font=('Segoe UI', 13, 'bold'),
+                                   foreground=self.colors['heading'])
+        
+        self.chat_display.tag_config('heading_3', 
+                                   font=('Segoe UI', 12, 'bold'),
                                    foreground=self.colors['heading'])
         
         # Input area
@@ -205,26 +249,10 @@ class InquireChatBot:
             fg=self.colors['fg'],
             insertbackground=self.colors['fg'],
             relief=tk.FLAT,
-            borderwidth=8,
-            placeholder="Ask Inqui.re anything..."
+            borderwidth=8
         )
         self.message_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 10))
         self.message_entry.bind('<Return>', self.send_message)
-        
-        # Add placeholder text functionality
-        def set_placeholder(event=None):
-            if not self.message_entry.get():
-                self.message_entry.insert(0, "Ask Inqui.re anything...")
-                self.message_entry.config(fg='gray')
-        
-        def remove_placeholder(event=None):
-            if self.message_entry.get() == "Ask Inqui.re anything...":
-                self.message_entry.delete(0, tk.END)
-                self.message_entry.config(fg=self.colors['fg'])
-        
-        self.message_entry.bind('<FocusIn>', remove_placeholder)
-        self.message_entry.bind('<FocusOut>', set_placeholder)
-        set_placeholder()  # Set initial placeholder
         
         self.send_button = tk.Button(
             input_frame,
@@ -269,21 +297,139 @@ class InquireChatBot:
         # Focus on input
         self.message_entry.focus()
     
-    def add_message(self, message, sender='user'):
-        """Add a styled message to the chat"""
+    def add_bot_message(self, message):
+        """Add a bot message with markdown rendering"""
         self.chat_display.config(state=tk.NORMAL)
         
         timestamp = datetime.now().strftime("%H:%M")
         
-        if sender == 'user':
-            self.chat_display.insert(tk.END, f"\n[{timestamp}] You:\n", 'user')
-            self.chat_display.insert(tk.END, f"{message}\n\n")
-        elif sender == 'bot':
-            self.chat_display.insert(tk.END, f"\n[{timestamp}] Inqui.re:\n", 'bot')
-            
-            # Format the message to remove markdown
-            formatted_message = self.format_response(message)
-            self.chat_display.insert(tk.END, f"{formatted_message}\n\n")
+        # Add bot header
+        self.chat_display.insert(tk.END, f"\n[{timestamp}] Inqui.re:\n", 'bot')
+        
+        # Render the message with markdown formatting
+        self.render_markdown(self.chat_display, message)
+        
+        # Add some spacing
+        self.chat_display.insert(tk.END, "\n")
+        
+        self.chat_display.config(state=tk.DISABLED)
+        self.chat_display.see(tk.END)
+    
+    def add_user_message(self, message):
+        """Add a user message (no markdown processing)"""
+        self.chat_display.config(state=tk.NORMAL)
+        
+        timestamp = datetime.now().strftime("%H:%M")
+        self.chat_display.insert(tk.END, f"\n[{timestamp}] You:\n", 'user')
+        self.chat_display.insert(tk.END, f"{message}\n\n")
+        
+        self.chat_display.config(state=tk.DISABLED)
+        self.chat_display.see(tk.END)
+    
+    def send_message(self, event=None):
+        message = self.message_entry.get().strip()
+        
+        # Ignore if empty
+        if not message:
+            return
+        
+        self.message_entry.delete(0, tk.END)
+        self.add_user_message(message)
+        
+        # Update UI for processing
+        self.send_button.config(state=tk.DISABLED, text="⏳ Processing...")
+        self.message_entry.config(state=tk.DISABLED)
+        self.status_var.set("🔍 Inqui.re is thinking...")
+        
+        # Show typing
+        self.show_typing_indicator()
+        
+        # Get response in thread
+        threading.Thread(target=self.get_ai_response, args=(message,), daemon=True).start()
+    
+    def show_typing_indicator(self):
+        self.chat_display.config(state=tk.NORMAL)
+        self.chat_display.insert(tk.END, "Inqui.re is typing...\n", 'system')
+        self.chat_display.config(state=tk.DISABLED)
+        self.chat_display.see(tk.END)
+    
+    def remove_typing_indicator(self):
+        self.chat_display.config(state=tk.NORMAL)
+        self.chat_display.delete('end-2l', 'end-1l')
+        self.chat_display.config(state=tk.DISABLED)
+    
+    def get_ai_response(self, message):
+        try:
+            response = self.chat.send_message(message)
+            self.root.after(0, self.display_ai_response, response.text)
+        except Exception as e:
+            self.root.after(0, self.display_ai_response, f"Error: {str(e)}")
+    
+    def display_ai_response(self, response):
+        self.remove_typing_indicator()
+        self.add_bot_message(response)
+        
+        # Reset UI
+        self.send_button.config(state=tk.NORMAL, text="🔍 Ask")
+        self.message_entry.config(state=tk.NORMAL)
+        self.message_entry.focus()
+        self.status_var.set("🟢 Online")
+    
+    def clear_chat(self):
+        self.chat_display.config(state=tk.NORMAL)
+        self.chat_display.delete(1.0, tk.END)
+        self.chat_display.config(state=tk.DISABLED)
+        self.add_bot_message("Chat cleared! Ready for new conversation. 🎯")
+    
+    def new_chat(self):
+        self.chat = self.model.start_chat(history=[])
+        self.clear_chat()
+        self.add_bot_message("Hello! I'm **Inqui.re**, your AI assistant. What would you like to explore today? 🌟")
+    
+    def save_chat(self):
+        try:
+            filename = filedialog.asksaveasfilename(
+                defaultextension=".txt",
+                filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
+                title="Save Inqui.re Conversation"
+            )
+            if filename:
+                with open(filename, 'w', encoding='utf-8') as f:
+                    f.write(self.chat_display.get(1.0, tk.END))
+                messagebox.showinfo("Success", "Conversation saved successfully!")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to save conversation: {e}")
+    
+    def export_chat(self):
+        try:
+            filename = filedialog.asksaveasfilename(
+                defaultextension=".json",
+                filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
+                title="Export Inqui.re Conversation"
+            )
+            if filename:
+                chat_data = {
+                    'timestamp': datetime.now().isoformat(),
+                    'assistant': 'Inqui.re',
+                    'model': str(self.model.model_name),
+                    'conversation': self.chat_display.get(1.0, tk.END)
+                }
+                
+                with open(filename, 'w', encoding='utf-8') as f:
+                    json.dump(chat_data, f, indent=2, ensure_ascii=False)
+                
+                messagebox.showinfo("Success", "Conversation exported successfully!")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to export conversation: {e}")
+
+
+def main():
+    root = tk.Tk()
+    app = InquireChatBot(root)
+    root.mainloop()
+
+if __name__ == "__main__":
+    main()ge}\n\n")
             
         elif sender == 'system':
             self.chat_display.insert(tk.END, f"\n{message}\n", 'system')
